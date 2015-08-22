@@ -1,0 +1,167 @@
+---
+title: "PreMachLearn_031 - Course Project"
+author: "Miguel Sena e Silva"
+date: "Sunday, August 29, 2015"
+output: html_document
+---
+
+###Executive Summary
+
+This project uses data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways (classified in the "classe" variable: A - Correctly; B-E - Incorrectly). More information on the data source is available from this [website](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+The training data for this project are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv). With this data (19.622 observations of 160 variables) we must develop a machine learning algorithm that "learns" how to classify new data (not yet classified). This exercise involves using our prediction model to predict 20 different test cases, available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).
+
+This document describes:
+
+- how I built my model, 
+
+- how I used cross validation, 
+
+- what the expected out of sample error I obtained, 
+
+- and all the  choices I made to get it.
+
+
+###Introduction
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). This info is given in the "classe" variable, in the training set.
+
+The goal of this project is to build a prediction algorithm that identifies this categories for an independent data set. 
+ 
+###Getting the data
+
+```{r , echo = TRUE}
+##Load training data
+training <- read.table("./projData/training.csv", sep = ",", header = TRUE)
+dim(training)
+
+##Load testing data
+testing <- read.table("./projData/testing.csv", sep = ",", header = TRUE)
+dim(testing)
+```
+
+###Understanding and preparing the Data for the exercise
+
+Regarding the innitial choices I made, I took a peek at the test data set, to get a feeling of what it is about. The strategy I persued involved looking out for the relevant covariates in the testing dataset (no point in considering null variance covariates in the classification algorithm...), as there are lots of variables that don't have any information. For this, I use the $nearZeroVar$ formula available in R package [caret](https://cran.r-project.org/web/packages/caret/caret.pdf).
+
+```{r , echo = TRUE}
+library(caret)
+nsv_ts <- nearZeroVar(testing, saveMetrics=TRUE)
+nsv_ts
+```
+
+The following code picks the relevant covariates for the prediction algorithm.
+
+```{r , echo = TRUE}
+#define relevant covariates
+covariates <- rownames(nsv_ts[nsv_ts$zeroVar == 0,])
+## covariates
+## summary(covariates)
+```
+
+In a effort to avoid *overfitting*, I also disregarded some variables not directly related to the Human Activity Recognition exercise, such as **user_name**, **raw_timestamp_part_1**, **raw_timestamp_part_2**, **cvtd_timestamp**, or **num_window**. I also disregarded counters **X** and **problem_id**.
+
+```{r , echo = TRUE}
+#remove spurious variables from covariates 
+covariates <- covariates[7:58]
+covariates
+```
+
+The next code chunk applyes this set of variables to filter the relevant covariates in the training data set.
+
+```{r , echo = TRUE}
+# add predictive variable to list of variables 
+covariates[length(covariates)+1] <- "classe"
+trainWork <- training[,covariates]
+```
+
+Looking out for missing values...there aren't any, so nothing to worry here.
+
+```{r , echo = TRUE}
+sapply(trainWork, function(x) sum(is.na(x)))
+```
+
+In the next step, I plotted an histogram of all variables, to infer about the skewness and normality of covariates (the command line for this is given below, although inactive). I then standardized all covariates (with the $preProcess$ formula, also from the caret package), aiming to better fit the data to the purpose at hands.
+
+```{r , echo = TRUE}
+## for(i in 1:dim(trainWork)[2]){hist(as.numeric(trainWork[,i]), main = covariates[i])}
+preObj  <- preProcess(trainWork[,-53], method = c("center","scale"))
+trainSt <- predict(preObj, trainWork[,-53])
+trainSt$classe <- trainWork$classe
+## summary(trainSt)
+```
+
+##Training the model
+
+My first approach to training the model was to perform a default Random Forest algorithm with the $caret$ package, Keeping faithfull to ***Veloso et al*** approach, who initially justified this methodology due to *"the caracteristic noise in the sensor data"*. For that, I divided the training set in 60/40.
+
+```{r , echo = TRUE, cache = TRUE}
+set.seed(12345)
+inTrain = createDataPartition(y = trainSt$classe, p = 0.6, list = FALSE)
+trainCDP = trainSt[ inTrain,]
+testCDP = trainSt[-inTrain,]
+set.seed(123)
+modFit1 <- train(classe ~ ., method = "rf", data = trainCDP)
+saveRDS(modFit1, file="modFitRandom1.rds"); ##myVariableName = readRDS("myFile.rds")
+```
+
+With this model, I got the following out of sample errors' statistics:
+
+```{r , echo = TRUE}
+pred1 <- predict(modFit1, newdata = testCDP)
+confM1 <- confusionMatrix(pred1,testCDP$classe)
+confM1
+```
+
+We get an overall "out of sample" accuracy of `r confM1$overall[1]`, which is indeed a very high figure.
+
+Still, I tried to improve this model, by means of a 10 k-fold cross validation. As you can see below, I was able to improve the overall accuracy of the predicting algorithm, but just marginally (in line with what Jeff talked about in his lectures). 
+
+```{r , echo = TRUE, cache=TRUE}
+fitControl <- trainControl(## 10-fold CV
+  method = "repeatedcv",
+  number = 10,
+  ## repeated ten times
+  repeats = 10)
+
+modFit2 <- train(classe ~ ., data = trainCDP,
+                 method = "rf",
+                 trControl = fitControl,
+                 verbose = FALSE)
+
+saveRDS(modFit2, file="modFitRandom2.rds")
+pred2 <- predict(modFit2, newdata = testCDP)
+confM2 <- confusionMatrix(pred2,testCDP$classe)
+confM2
+```
+
+This last model is used to answer the *Course Project Submission* part. To do so, one must prepare the Test data set so that it can be processed by our algorithm (using the same transformations as those used to train the model).   
+
+```{r , echo = TRUE}
+testWork <- testing[,covariates[1:(length(covariates)-1)]]
+testSt  <- predict(preObj, testWork)
+
+##run prediction on test data
+predSubmit <- predict(modFit2, newdata = testSt, type = "prob")
+results <- cbind(predSubmit, classe = LETTERS[apply(predSubmit,1, function(x) which (x == max(x)))])
+results
+```
+
+
+This last table gives the probability of each observation belonging to a "classe"" category. 
+
+Finally, the last code chunk produces the files submitted to Coursera's **Course Project: Submission**. 
+
+```{r}
+answers <- as.character(results$classe)
+pml_write_files = function(x){
+     n = length(x)
+     for(i in 1:n){
+         filename = paste0("problem_id_",i,".txt")
+         write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+     }
+}
+ pml_write_files(answers)
+```
