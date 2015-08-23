@@ -7,7 +7,9 @@ This repo presents all the code that I developed for the Practical Machine Learn
 
 This course provides the basic components of building and applying prediction functions with an emphasis on practical applications.
 
-Please refer to RMD and HTML files for all about the code for this assignment. One option to see the HTML file is to open it, and then on the upper menu, next to RAW/BLAME/HISTORY, click on "Open this file in GitHub Desktop".
+Please refer to RMD and HTML files for all about the code for this assignment. 
+
+One option to see the HTML file is to see the [pdf](https://github.com/MSena/PredMachLearn-031/blob/master/PreMachLear.pdf) version.
 
 This assignment makes use of the WLE dataset, from the following source:
 
